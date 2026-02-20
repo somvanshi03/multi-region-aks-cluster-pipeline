@@ -77,7 +77,7 @@ on:
           - Standard_D4s_v3
           - Standard_D8s_v3
           - Standard_F2s_v2
-          - Standard_F4s_v2
+          - Standard_F2as_v6
         default: 'Standard_D2s_v3'
       enable_autoscaler:
         description: 'Enable cluster autoscaler?'
@@ -114,6 +114,16 @@ jobs:
         creds: ${{ secrets.AZURE_AKS_CREDENTIALS }}
         enable-AzPSSession: false
         environment: azurecloud
+        
+    - name: Export ARM creds for Terraform (from AZURE_AKS_CREDENTIALS)
+      run: |
+        CREDS='${{ secrets.AZURE_AKS_CREDENTIALS }}'
+        echo "$CREDS" | jq -r '
+        "ARM_CLIENT_ID=\(.clientId)\n" +
+        "ARM_CLIENT_SECRET=\(.clientSecret)\n" +
+        "ARM_TENANT_ID=\(.tenantId)\n" +
+        "ARM_SUBSCRIPTION_ID=\(.subscriptionId)\n"
+        ' >> $GITHUB_ENV
 
     - name: Validate Input Parameters
       run: |
