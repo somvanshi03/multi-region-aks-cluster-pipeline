@@ -1,0 +1,578 @@
+name: Create Two AKS Clusters in Different Regions
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group_1:
+        description: 'Resource Group for Cluster 1'
+        required: true
+        type: string
+        default: 'aks-rg-1'
+      cluster_name_1:
+        description: 'Cluster 1 Name'
+        required: true
+        type: string
+        default: 'aks-cluster-1'
+      region_1:
+        description: 'Region for Cluster 1'
+        required: true
+        type: choice
+        options:
+          - eastus
+          - eastus2
+          - westus
+          - westus2
+          - westeurope
+          - northeurope
+          - southeastasia
+          - japaneast
+        default: 'eastus'
+      kubernetes_version_1:
+        description: 'Kubernetes Version for Cluster 1'
+        required: true
+        type: string
+        default: '1.29'
+      
+      resource_group_2:
+        description: 'Resource Group for Cluster 2'
+        required: true
+        type: string
+        default: 'aks-rg-2'
+      cluster_name_2:
+        description: 'Cluster 2 Name'
+        required: true
+        type: string
+        default: 'aks-cluster-2'
+      region_2:
+        description: 'Region for Cluster 2'
+        required: true
+        type: choice
+        options:
+          - eastus
+          - eastus2
+          - westus
+          - westus2
+          - westeurope
+          - northeurope
+          - southeastasia
+          - japaneast
+        default: 'westus'
+      kubernetes_version_2:
+        description: 'Kubernetes Version for Cluster 2'
+        required: true
+        type: string
+        default: '1.29'
+      
+      node_count:
+        description: 'Initial node count per cluster'
+        required: true
+        type: string
+        default: '2'
+      node_vm_size:
+        description: 'VM Size for nodes'
+        required: true
+        type: choice
+        options:
+          - Standard_D2s_v3
+          - Standard_D4s_v3
+          - Standard_D8s_v3
+          - Standard_F2s_v2
+          - Standard_F4s_v2
+        default: 'Standard_D2s_v3'
+      enable_autoscaler:
+        description: 'Enable cluster autoscaler?'
+        required: true
+        type: boolean
+        default: true
+      min_nodes:
+        description: 'Minimum nodes (if autoscaler enabled)'
+        required: true
+        type: string
+        default: '1'
+      max_nodes:
+        description: 'Maximum nodes (if autoscaler enabled)'
+        required: true
+        type: string
+        default: '3'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  create-two-aks-clusters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Azure Login
+      uses: azure/login@v2
+      with:
+        creds: ${{ secrets.AZURE_AKS_CREDENTIALS }}
+        enable-AzPSSession: false
+        environment: azurecloud
+
+    - name: Validate Input Parameters
+      run: |
+        echo "========================================="
+        echo "Validating input parameters"
+        echo "========================================="
+        
+        # Check if cluster names are different
+        if [ "${{ github.event.inputs.cluster_name_1 }}" == "${{ github.event.inputs.cluster_name_2 }}" ]; then
+          echo "❌ Error: Cluster names must be different"
+          exit 1
+        fi
+        
+        # Check if at least one region is different
+        if [ "${{ github.event.inputs.region_1 }}" == "${{ github.event.inputs.region_2 }}" ]; then
+          echo "⚠️ Warning: Both clusters are in the same region"
+          echo "Continuing anyway as requested..."
+        fi
+        
+        echo "✅ Validation passed"
+
+    - name: Display Cluster Configuration
+      run: |
+        echo "========================================="
+        echo "CLUSTER CONFIGURATION"
+        echo "========================================="
+        echo ""
+        echo "CLUSTER 1:"
+        echo "  Resource Group: ${{ github.event.inputs.resource_group_1 }}"
+        echo "  Cluster Name: ${{ github.event.inputs.cluster_name_1 }}"
+        echo "  Region: ${{ github.event.inputs.region_1 }}"
+        echo "  Kubernetes Version: ${{ github.event.inputs.kubernetes_version_1 }}"
+        echo ""
+        echo "CLUSTER 2:"
+        echo "  Resource Group: ${{ github.event.inputs.resource_group_2 }}"
+        echo "  Cluster Name: ${{ github.event.inputs.cluster_name_2 }}"
+        echo "  Region: ${{ github.event.inputs.region_2 }}"
+        echo "  Kubernetes Version: ${{ github.event.inputs.kubernetes_version_2 }}"
+        echo ""
+        echo "COMMON SETTINGS:"
+        echo "  Node Count: ${{ github.event.inputs.node_count }}"
+        echo "  VM Size: ${{ github.event.inputs.node_vm_size }}"
+        echo "  Autoscaler Enabled: ${{ github.event.inputs.enable_autoscaler }}"
+        echo "  Min Nodes: ${{ github.event.inputs.min_nodes }}"
+        echo "  Max Nodes: ${{ github.event.inputs.max_nodes }}"
+        echo "========================================="
+
+    - name: Create Resource Group 1
+      run: |
+        echo "Creating/Verifying Resource Group 1: ${{ github.event.inputs.resource_group_1 }} in ${{ github.event.inputs.region_1 }}"
+        
+        if ! az group show --name ${{ github.event.inputs.resource_group_1 }} &>/dev/null; then
+          az group create \
+            --location ${{ github.event.inputs.region_1 }} \
+            --resource-group ${{ github.event.inputs.resource_group_1 }} \
+            --tags CreatedBy=GitHubActions CreatedAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ") Purpose="AKS Cluster 1"
+          echo "✅ Resource Group 1 created"
+        else
+          echo "✅ Resource Group 1 already exists"
+        fi
+
+    - name: Create Resource Group 2
+      run: |
+        echo "Creating/Verifying Resource Group 2: ${{ github.event.inputs.resource_group_2 }} in ${{ github.event.inputs.region_2 }}"
+        
+        if ! az group show --name ${{ github.event.inputs.resource_group_2 }} &>/dev/null; then
+          az group create \
+            --location ${{ github.event.inputs.region_2 }} \
+            --resource-group ${{ github.event.inputs.resource_group_2 }} \
+            --tags CreatedBy=GitHubActions CreatedAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ") Purpose="AKS Cluster 2"
+          echo "✅ Resource Group 2 created"
+        else
+          echo "✅ Resource Group 2 already exists"
+        fi
+
+    - name: Create AKS Cluster 1
+      id: cluster1
+      run: |
+        echo "========================================="
+        echo "Creating AKS Cluster 1: ${{ github.event.inputs.cluster_name_1 }} in ${{ github.event.inputs.region_1 }}"
+        echo "========================================="
+        
+        # Check if cluster already exists
+        if az aks show --name ${{ github.event.inputs.cluster_name_1 }} \
+          --resource-group ${{ github.event.inputs.resource_group_1 }} &>/dev/null; then
+          echo "⚠️ Cluster ${{ github.event.inputs.cluster_name_1 }} already exists. Skipping creation."
+          
+          # Get existing cluster info
+          CLUSTER_INFO=$(az aks show \
+            --name ${{ github.event.inputs.cluster_name_1 }} \
+            --resource-group ${{ github.event.inputs.resource_group_1 }} \
+            --query "{version:kubernetesVersion, fqdn:fqdn}" \
+            -o json)
+          
+          echo "cluster1_status=exists" >> $GITHUB_OUTPUT
+          echo "cluster1_version=$(echo $CLUSTER_INFO | jq -r '.version')" >> $GITHUB_OUTPUT
+        else
+          # Build autoscaler parameters
+          AUTOSCALER_PARAMS=""
+          if [ "${{ github.event.inputs.enable_autoscaler }}" == "true" ]; then
+            AUTOSCALER_PARAMS="--enable-cluster-autoscaler --min-count ${{ github.event.inputs.min_nodes }} --max-count ${{ github.event.inputs.max_nodes }}"
+          fi
+          
+          # Create AKS cluster
+          az aks create \
+            --name ${{ github.event.inputs.cluster_name_1 }} \
+            --resource-group ${{ github.event.inputs.resource_group_1 }} \
+            --kubernetes-version ${{ github.event.inputs.kubernetes_version_1 }} \
+            --node-count ${{ github.event.inputs.node_count }} \
+            --node-vm-size ${{ github.event.inputs.node_vm_size }} \
+            --enable-managed-identity \
+            --network-plugin azure \
+            --generate-ssh-keys \
+            --location ${{ github.event.inputs.region_1 }} \
+            $AUTOSCALER_PARAMS \
+            --tags Environment=MultiRegion Purpose="Cluster1" CreatedBy=GitHubActions
+          
+          echo "✅ AKS Cluster 1 created successfully"
+          echo "cluster1_status=created" >> $GITHUB_OUTPUT
+          echo "cluster1_version=${{ github.event.inputs.kubernetes_version_1 }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create AKS Cluster 2
+      id: cluster2
+      run: |
+        echo "========================================="
+        echo "Creating AKS Cluster 2: ${{ github.event.inputs.cluster_name_2 }} in ${{ github.event.inputs.region_2 }}"
+        echo "========================================="
+        
+        # Check if cluster already exists
+        if az aks show --name ${{ github.event.inputs.cluster_name_2 }} \
+          --resource-group ${{ github.event.inputs.resource_group_2 }} &>/dev/null; then
+          echo "⚠️ Cluster ${{ github.event.inputs.cluster_name_2 }} already exists. Skipping creation."
+          
+          # Get existing cluster info
+          CLUSTER_INFO=$(az aks show \
+            --name ${{ github.event.inputs.cluster_name_2 }} \
+            --resource-group ${{ github.event.inputs.resource_group_2 }} \
+            --query "{version:kubernetesVersion, fqdn:fqdn}" \
+            -o json)
+          
+          echo "cluster2_status=exists" >> $GITHUB_OUTPUT
+          echo "cluster2_version=$(echo $CLUSTER_INFO | jq -r '.version')" >> $GITHUB_OUTPUT
+        else
+          # Build autoscaler parameters
+          AUTOSCALER_PARAMS=""
+          if [ "${{ github.event.inputs.enable_autoscaler }}" == "true" ]; then
+            AUTOSCALER_PARAMS="--enable-cluster-autoscaler --min-count ${{ github.event.inputs.min_nodes }} --max-count ${{ github.event.inputs.max_nodes }}"
+          fi
+          
+          # Create AKS cluster
+          az aks create \
+            --name ${{ github.event.inputs.cluster_name_2 }} \
+            --resource-group ${{ github.event.inputs.resource_group_2 }} \
+            --kubernetes-version ${{ github.event.inputs.kubernetes_version_2 }} \
+            --node-count ${{ github.event.inputs.node_count }} \
+            --node-vm-size ${{ github.event.inputs.node_vm_size }} \
+            --enable-managed-identity \
+            --network-plugin azure \
+            --generate-ssh-keys \
+            --location ${{ github.event.inputs.region_2 }} \
+            $AUTOSCALER_PARAMS \
+            --tags Environment=MultiRegion Purpose="Cluster2" CreatedBy=GitHubActions
+          
+          echo "✅ AKS Cluster 2 created successfully"
+          echo "cluster2_status=created" >> $GITHUB_OUTPUT
+          echo "cluster2_version=${{ github.event.inputs.kubernetes_version_2 }}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Get Cluster Credentials
+      run: |
+        echo "Getting cluster credentials..."
+        
+        # Get credentials for cluster 1
+        az aks get-credentials \
+          --name ${{ github.event.inputs.cluster_name_1 }} \
+          --resource-group ${{ github.event.inputs.resource_group_1 }} \
+          --overwrite-existing \
+          --admin \
+          --file kubeconfig-cluster1
+        
+        # Get credentials for cluster 2
+        az aks get-credentials \
+          --name ${{ github.event.inputs.cluster_name_2 }} \
+          --resource-group ${{ github.event.inputs.resource_group_2 }} \
+          --overwrite-existing \
+          --admin \
+          --file kubeconfig-cluster2
+        
+        echo "✅ Credentials saved"
+
+    - name: Verify Cluster 1
+      run: |
+        echo "========================================="
+        echo "Verifying Cluster 1: ${{ github.event.inputs.cluster_name_1 }}"
+        echo "========================================="
+        
+        export KUBECONFIG=kubeconfig-cluster1
+        
+        # Get nodes
+        echo "Nodes in Cluster 1:"
+        kubectl get nodes -o wide
+        
+        # Get cluster info
+        CLUSTER_INFO=$(az aks show \
+          --name ${{ github.event.inputs.cluster_name_1 }} \
+          --resource-group ${{ github.event.inputs.resource_group_1 }} \
+          --query "{version:kubernetesVersion, fqdn:fqdn}" \
+          -o json)
+        
+        echo "Cluster 1 Version: $(echo $CLUSTER_INFO | jq -r '.version')"
+        echo "Cluster 1 FQDN: $(echo $CLUSTER_INFO | jq -r '.fqdn')"
+
+    - name: Verify Cluster 2
+      run: |
+        echo "========================================="
+        echo "Verifying Cluster 2: ${{ github.event.inputs.cluster_name_2 }}"
+        echo "========================================="
+        
+        export KUBECONFIG=kubeconfig-cluster2
+        
+        # Get nodes
+        echo "Nodes in Cluster 2:"
+        kubectl get nodes -o wide
+        
+        # Get cluster info
+        CLUSTER_INFO=$(az aks show \
+          --name ${{ github.event.inputs.cluster_name_2 }} \
+          --resource-group ${{ github.event.inputs.resource_group_2 }} \
+          --query "{version:kubernetesVersion, fqdn:fqdn}" \
+          -o json)
+        
+        echo "Cluster 2 Version: $(echo $CLUSTER_INFO | jq -r '.version')"
+        echo "Cluster 2 FQDN: $(echo $CLUSTER_INFO | jq -r '.fqdn')"
+
+    - name: Deploy Test Application to Both Clusters
+      run: |
+        echo "========================================="
+        echo "Deploying test application to both clusters"
+        echo "========================================="
+        
+        # Deploy to Cluster 1
+        export KUBECONFIG=kubeconfig-cluster1
+        
+        cat << EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: test-app
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: nginx-test
+          namespace: test-app
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: nginx-test
+          template:
+            metadata:
+              labels:
+                app: nginx-test
+            spec:
+              containers:
+              - name: nginx
+                image: nginx:latest
+                ports:
+                - containerPort: 80
+                resources:
+                  requests:
+                    memory: "64Mi"
+                    cpu: "250m"
+                  limits:
+                    memory: "128Mi"
+                    cpu: "500m"
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: nginx-test
+          namespace: test-app
+        spec:
+          selector:
+            app: nginx-test
+          ports:
+          - port: 80
+            targetPort: 80
+          type: LoadBalancer
+        EOF
+        
+        echo "✅ Test application deployed to Cluster 1"
+        
+        # Deploy to Cluster 2
+        export KUBECONFIG=kubeconfig-cluster2
+        
+        cat << EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: test-app
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: nginx-test
+          namespace: test-app
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: nginx-test
+          template:
+            metadata:
+              labels:
+                app: nginx-test
+            spec:
+              containers:
+              - name: nginx
+                image: nginx:latest
+                ports:
+                - containerPort: 80
+                resources:
+                  requests:
+                    memory: "64Mi"
+                    cpu: "250m"
+                  limits:
+                    memory: "128Mi"
+                    cpu: "500m"
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: nginx-test
+          namespace: test-app
+        spec:
+          selector:
+            app: nginx-test
+          ports:
+          - port: 80
+            targetPort: 80
+          type: LoadBalancer
+        EOF
+        
+        echo "✅ Test application deployed to Cluster 2"
+
+    - name: Generate Summary Report
+      run: |
+        echo "========================================="
+        echo "AKS CLUSTERS CREATION SUMMARY"
+        echo "========================================="
+        echo ""
+        echo "CLUSTER 1:"
+        echo "  Resource Group: ${{ github.event.inputs.resource_group_1 }}"
+        echo "  Cluster Name: ${{ github.event.inputs.cluster_name_1 }}"
+        echo "  Region: ${{ github.event.inputs.region_1 }}"
+        echo "  Version: ${{ steps.cluster1.outputs.cluster1_version || github.event.inputs.kubernetes_version_1 }}"
+        echo "  Status: ${{ steps.cluster1.outputs.cluster1_status || 'created' }}"
+        echo ""
+        echo "CLUSTER 2:"
+        echo "  Resource Group: ${{ github.event.inputs.resource_group_2 }}"
+        echo "  Cluster Name: ${{ github.event.inputs.cluster_name_2 }}"
+        echo "  Region: ${{ github.event.inputs.region_2 }}"
+        echo "  Version: ${{ steps.cluster2.outputs.cluster2_version || github.event.inputs.kubernetes_version_2 }}"
+        echo "  Status: ${{ steps.cluster2.outputs.cluster2_status || 'created' }}"
+        echo ""
+        echo "COMMON SETTINGS:"
+        echo "  Node Count: ${{ github.event.inputs.node_count }}"
+        echo "  VM Size: ${{ github.event.inputs.node_vm_size }}"
+        echo "  Autoscaler: ${{ github.event.inputs.enable_autoscaler }} (Min: ${{ github.event.inputs.min_nodes }}, Max: ${{ github.event.inputs.max_nodes }})"
+        echo "========================================="
+
+    - name: Generate Detailed Report
+      run: |
+        cat << EOF > aks-clusters-report.md
+        # AKS Multi-Region Clusters Report
+        
+        ## Overview
+        - **Creation Time**: $(date)
+        - **Created By**: GitHub Actions
+        
+        ## Cluster 1 Details
+        | Property | Value |
+        |----------|-------|
+        | Resource Group | ${{ github.event.inputs.resource_group_1 }} |
+        | Cluster Name | ${{ github.event.inputs.cluster_name_1 }} |
+        | Region | ${{ github.event.inputs.region_1 }} |
+        | Kubernetes Version | ${{ steps.cluster1.outputs.cluster1_version || github.event.inputs.kubernetes_version_1 }} |
+        | Status | ${{ steps.cluster1.outputs.cluster1_status || 'created' }} |
+        
+        ## Cluster 2 Details
+        | Property | Value |
+        |----------|-------|
+        | Resource Group | ${{ github.event.inputs.resource_group_2 }} |
+        | Cluster Name | ${{ github.event.inputs.cluster_name_2 }} |
+        | Region | ${{ github.event.inputs.region_2 }} |
+        | Kubernetes Version | ${{ steps.cluster2.outputs.cluster2_version || github.event.inputs.kubernetes_version_2 }} |
+        | Status | ${{ steps.cluster2.outputs.cluster2_status || 'created' }} |
+        
+        ## Common Configuration
+        - **Node Count**: ${{ github.event.inputs.node_count }}
+        - **VM Size**: ${{ github.event.inputs.node_vm_size }}
+        - **Autoscaler Enabled**: ${{ github.event.inputs.enable_autoscaler }}
+        - **Autoscaler Range**: ${{ github.event.inputs.min_nodes }} - ${{ github.event.inputs.max_nodes }} nodes
+        
+        ## Test Application
+        A test Nginx application has been deployed to both clusters in the 'test-app' namespace.
+        
+        ## Access Commands
+        \`\`\`bash
+        # Access Cluster 1
+        export KUBECONFIG=kubeconfig-cluster1
+        kubectl get nodes
+        
+        # Access Cluster 2
+        export KUBECONFIG=kubeconfig-cluster2
+        kubectl get nodes
+        \`\`\`
+        
+        ## Next Steps
+        1. Download kubeconfig files from artifacts
+        2. Configure your local kubectl
+        3. Deploy your applications
+        4. Set up monitoring and alerts
+        EOF
+        
+        cat aks-clusters-report.md
+
+    - name: Upload Kubeconfig Files
+      uses: actions/upload-artifact@v4
+      with:
+        name: kubeconfig-files-${{ github.run_id }}
+        path: |
+          kubeconfig-cluster1
+          kubeconfig-cluster2
+
+    - name: Upload Cluster Report
+      uses: actions/upload-artifact@v4
+      with:
+        name: aks-clusters-report-${{ github.run_id }}
+        path: aks-clusters-report.md
+
+    - name: Send Success Notification
+      if: success()
+      run: |
+        echo "========================================="
+        echo "✅ MULTI-REGION AKS CLUSTERS CREATED SUCCESSFULLY"
+        echo "========================================="
+        echo "Cluster 1: ${{ github.event.inputs.cluster_name_1 }} in ${{ github.event.inputs.region_1 }}"
+        echo "Cluster 2: ${{ github.event.inputs.cluster_name_2 }} in ${{ github.event.inputs.region_2 }}"
+        echo "========================================="
+        echo "Download kubeconfig files from artifacts to access clusters"
+
+    - name: Send Failure Notification
+      if: failure()
+      run: |
+        echo "========================================="
+        echo "❌ FAILED TO CREATE CLUSTERS"
+        echo "========================================="
+        echo "Please check the logs for more details"
+        echo "========================================="
