@@ -117,7 +117,7 @@ jobs:
         
     - name: Export ARM creds for Terraform (from AZURE_AKS_CREDENTIALS)
       run: |
-        CREDS='${{ secrets.AZURE_AKS_CREDENTIALS }}'
+        CREDS='${{ secrets.AZURE_CREDENTIALS }}'
         echo "$CREDS" | jq -r '
         "ARM_CLIENT_ID=\(.clientId)\n" +
         "ARM_CLIENT_SECRET=\(.clientSecret)\n" +
