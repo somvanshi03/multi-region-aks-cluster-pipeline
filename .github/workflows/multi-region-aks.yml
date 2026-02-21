@@ -111,13 +111,13 @@ jobs:
     - name: Azure Login
       uses: azure/login@v2
       with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+        creds: ${{ secrets.AZURE_AKS_CREDENTIALS }}
         enable-AzPSSession: false
         environment: azurecloud
         
     - name: Export ARM creds for Terraform (from AZURE_AKS_CREDENTIALS)
       run: |
-        CREDS='${{ secrets.AZURE_CREDENTIALS }}'
+        CREDS='${{ secrets.AZURE_AKS_CREDENTIALS }}'
         echo "$CREDS" | jq -r '
         "ARM_CLIENT_ID=\(.clientId)\n" +
         "ARM_CLIENT_SECRET=\(.clientSecret)\n" +
